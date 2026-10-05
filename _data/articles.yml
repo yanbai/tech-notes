@@ -1,0 +1,9 @@
+# Per-article metadata, keyed by file name.
+#   date:      publish date, also used to group the sidebar by year
+#   nav_title: short title shown in the article list (falls back to the page title)
+chrome-shmem-dentry-part1.md:
+  date: 2026-10-05
+  nav_title: Puppeteer 内存只涨不跌？（上篇：诊断）
+chrome-shmem-dentry-part2.md:
+  date: 2026-10-05
+  nav_title: Puppeteer 内存只涨不跌？（下篇：修复）

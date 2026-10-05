@@ -3,24 +3,88 @@ layout: base
 ---
 {%- assign date_format = site.minima.date_format | default: "%Y-%m-%d" -%}
 {%- assign articles = site.pages | where_exp: "p", "p.name contains '.md'" | where_exp: "p", "p.url != '/'" | sort: "name" -%}
-{%- assign page_date = site.data.dates[page.name] -%}
+{%- assign page_date = site.data.articles[page.name].date -%}
+
+{%- comment -%} Distinct publish years, newest first, for grouping the article list. {%- endcomment -%}
+{%- assign years = "" | split: "" -%}
+{%- for article in articles -%}
+  {%- assign article_date = site.data.articles[article.name].date -%}
+  {%- if article_date -%}
+    {%- assign year = article_date | date: "%Y" -%}
+    {%- assign years = years | push: year -%}
+  {%- endif -%}
+{%- endfor -%}
+{%- assign years = years | uniq | sort | reverse -%}
+
+{%- comment -%} Table of contents, built from the <h2 id="..."> headings kramdown emits. {%- endcomment -%}
+{%- assign heading_chunks = content | split: '<h2 id="' -%}
 <div class="article-layout">
 
-  <aside class="article-sidebar">
-    <nav aria-label="Articles">
+  <aside class="article-sidebar" id="article-sidebar" aria-label="全部文章">
+    <div class="sidebar-head">
+      <span class="sidebar-label">全部文章</span>
+      <button class="drawer-close" type="button" aria-label="关闭" data-drawer-close>
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M5 5l14 14M19 5L5 19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+
+    <nav class="sidebar-body">
+      {%- for year in years %}
+      <section class="article-group">
+        <h2 class="article-group-year">{{ year }}</h2>
+        <ul class="article-nav">
+          {%- for article in articles %}
+          {%- assign meta = site.data.articles[article.name] %}
+          {%- assign article_year = meta.date | date: "%Y" %}
+          {%- if article_year == year %}
+          <li>
+            <a href="{{ article.url | relative_url }}"{% if article.url == page.url %} class="active" aria-current="page"{% endif %}>
+              <span class="article-nav-title">{{ meta.nav_title | default: article.title | escape }}</span>
+              <time datetime="{{ meta.date | date_to_xmlschema }}">{{ meta.date | date: "%m-%d" }}</time>
+            </a>
+          </li>
+          {%- endif %}
+          {%- endfor %}
+        </ul>
+      </section>
+      {%- endfor %}
+
+      {%- comment -%} Articles without a date in _data/articles.yml are listed last. {%- endcomment -%}
       <ul class="article-nav">
         {%- for article in articles %}
-        {%- assign article_date = site.data.dates[article.name] %}
-        <li{% if article.url == page.url %} class="active"{% endif %}>
-          <a href="{{ article.url | relative_url }}">{{ article.title | escape }}</a>
-          {%- if article_date %}
-          <time datetime="{{ article_date | date_to_xmlschema }}">{{ article_date | date: date_format }}</time>
-          {%- endif %}
+        {%- unless site.data.articles[article.name].date %}
+        <li>
+          <a href="{{ article.url | relative_url }}"{% if article.url == page.url %} class="active" aria-current="page"{% endif %}>
+            <span class="article-nav-title">{{ site.data.articles[article.name].nav_title | default: article.title | escape }}</span>
+          </a>
         </li>
+        {%- endunless %}
         {%- endfor %}
       </ul>
+
+      <a class="all-articles" href="{{ '/' | relative_url }}">查看全部文章 →</a>
     </nav>
   </aside>
+
+  {%- if heading_chunks.size > 1 %}
+  <aside class="article-toc" aria-label="本文目录" data-toc>
+    <button class="toc-bar" type="button" aria-expanded="false" aria-controls="toc-list" data-toc-toggle>
+      <span class="toc-bar-label">目录</span>
+      <span class="toc-bar-current" data-toc-current></span>
+      <svg class="toc-bar-chevron" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <p class="toc-title">本文目录</p>
+    <ol class="toc-list" id="toc-list">
+      {%- for chunk in heading_chunks offset: 1 %}
+      {%- assign heading_id = chunk | split: '"' | first %}
+      {%- assign heading_text = chunk | split: '</h2>' | first | remove_first: heading_id | remove_first: '">' | strip_html | strip %}
+      <li><a href="#{{ heading_id }}">{{ heading_text }}</a></li>
+      {%- endfor %}
+    </ol>
+    <a class="back-to-top" href="#">↑ 回到顶部</a>
+    <span class="toc-progress" aria-hidden="true" data-toc-progress></span>
+  </aside>
+  {%- endif %}
 
   <article class="post article-main">
     <header class="post-header">
@@ -37,4 +101,101 @@ layout: base
     </div>
   </article>
 
+  <div class="layout-backdrop" data-backdrop></div>
 </div>
+
+<script>
+  (function () {
+    var root = document.documentElement;
+    var sidebar = document.getElementById("article-sidebar");
+    var drawerToggle = document.querySelector("[data-drawer-open]");
+    var toc = document.querySelector("[data-toc]");
+    var tocToggle = document.querySelector("[data-toc-toggle]");
+    var backdrop = document.querySelector("[data-backdrop]");
+    var desktop = window.matchMedia("(min-width: 1024px)");
+
+    function setDrawer(open) {
+      root.classList.toggle("drawer-open", open);
+      if (drawerToggle) drawerToggle.setAttribute("aria-expanded", String(open));
+      if (open) {
+        setToc(false);
+        sidebar.querySelector("[data-drawer-close]").focus();
+      } else if (drawerToggle && sidebar.contains(document.activeElement)) {
+        drawerToggle.focus();
+      }
+    }
+
+    function setToc(open) {
+      if (!toc) return;
+      root.classList.toggle("toc-open", open);
+      tocToggle.setAttribute("aria-expanded", String(open));
+    }
+
+    function closeAll() {
+      setDrawer(false);
+      setToc(false);
+    }
+
+    if (drawerToggle) {
+      drawerToggle.addEventListener("click", function () { setDrawer(true); });
+    }
+    sidebar.querySelector("[data-drawer-close]").addEventListener("click", function () { setDrawer(false); });
+    backdrop.addEventListener("click", closeAll);
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") closeAll();
+    });
+    desktop.addEventListener("change", closeAll);
+
+    if (!toc) return;
+
+    tocToggle.addEventListener("click", function () {
+      setToc(!root.classList.contains("toc-open"));
+    });
+
+    // Scroll spy: highlight the last heading that has scrolled past the top,
+    // mirror it into the mobile bar, and track reading progress.
+    var links = Array.prototype.slice.call(toc.querySelectorAll(".toc-list a"));
+    var headings = links.map(function (link) {
+      return document.getElementById(decodeURIComponent(link.hash.slice(1)));
+    });
+    var current = toc.querySelector("[data-toc-current]");
+    var progress = toc.querySelector("[data-toc-progress]");
+    var article = document.querySelector(".article-main");
+    var ticking = false;
+
+    links.forEach(function (link) {
+      link.addEventListener("click", function () { setToc(false); });
+    });
+
+    function update() {
+      ticking = false;
+      var offset = desktop.matches ? 120 : toc.offsetHeight + 24;
+      var active = 0;
+      headings.forEach(function (heading, index) {
+        if (heading && heading.getBoundingClientRect().top <= offset) active = index;
+      });
+      links.forEach(function (link, index) {
+        link.classList.toggle("active", index === active);
+        if (index === active) link.setAttribute("aria-current", "location");
+        else link.removeAttribute("aria-current");
+      });
+      current.textContent = links[active].textContent;
+
+      var rect = article.getBoundingClientRect();
+      var scrollable = rect.height - window.innerHeight;
+      var ratio = scrollable > 0 ? -rect.top / scrollable : 1;
+      progress.style.transform = "scaleX(" + Math.min(Math.max(ratio, 0), 1) + ")";
+    }
+
+    function requestUpdate() {
+      if (!ticking) {
+        ticking = true;
+        window.requestAnimationFrame(update);
+      }
+    }
+
+    window.addEventListener("scroll", requestUpdate, { passive: true });
+    window.addEventListener("resize", requestUpdate);
+    update();
+  })();
+</script>

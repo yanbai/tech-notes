@@ -1,10 +1,8 @@
-# tech-notes
+# Articles
 
 感想，经验和文字
 
-Write-ups of real production problems: what happened, why it happened, and what I took away from it.
-
-## Writings
+## Tech Writings
 
 | Topic | Article | Status |
 | --- | --- | --- |

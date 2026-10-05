@@ -1,8 +1,17 @@
 title: 椰风寨
-description: Write-ups of real production problems — what happened, why it happened, and what I took away from it.
+description: 旗未动，风也未动，是人的心自己在动
 lang: zh-CN
 
 remote_theme: "jekyll/minima@1e8a445"
+
+minima:
+  social_links:
+    - title: LinkedIn
+      icon: linkedin
+      url: "https://www.linkedin.com/in/yanbai-zhang-338a7444/"
+    - title: Instagram
+      icon: instagram
+      url: "https://www.instagram.com/byne_zhang/"
 
 plugins:
   - jekyll-remote-theme
@@ -19,6 +28,7 @@ titles_from_headings:
   strip_title: true
 
 exclude:
+  - Dockerfile
   - Gemfile
   - Gemfile.lock
   - vendor

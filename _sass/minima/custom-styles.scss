@@ -1,73 +1,682 @@
-// Article layout: sidebar navigation on the left, content on the right.
+// Article layout.
+//
+// Desktop (>= $article-desktop): article list | article | table of contents.
+// Mobile: the article list becomes a drawer opened from the header, and the
+// table of contents becomes a sticky bar that drops down the full list.
 
-body:has(.article-layout) .wrapper {
-  max-width: 1100px;
+$article-desktop: 1024px;
+$article-max-width: 296px + 834px + 240px;
+
+$article-accent:      #1f4ea8;
+$article-accent-soft: #ebf0fa;
+$article-text:        #222;
+$article-muted:       #777;
+$article-subtle:      #f7f8fc;
+$article-line:        #ececec;
+$article-code-bg:     #f0f2f8;
+
+@mixin article-desktop {
+  @media screen and (min-width: $article-desktop) {
+    @content;
+  }
 }
+
+@mixin article-mobile {
+  @media screen and (max-width: $article-desktop - 0.02px) {
+    @content;
+  }
+}
+
+// Page chrome
+// -----------
+
+body:has(.article-layout) {
+  .page-content {
+    padding: 0;
+
+    > .wrapper {
+      max-width: none;
+      padding: 0;
+    }
+  }
+
+  .site-header {
+    border-top-color: $article-text;
+    border-bottom-color: $article-line;
+
+    .wrapper {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      box-sizing: border-box;
+      max-width: $article-max-width;
+      margin: 0 auto;
+      padding: 0 44px;
+
+      @include article-mobile {
+        padding: 0 16px;
+      }
+    }
+  }
+
+  .site-title {
+    float: none;
+    padding-right: 0;
+
+    &,
+    &:visited {
+      color: $article-text;
+    }
+  }
+}
+
+.drawer-toggle,
+.drawer-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  margin-left: -6px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: $article-text;
+  cursor: pointer;
+
+  &:hover {
+    background: $article-subtle;
+  }
+}
+
+.drawer-toggle {
+  @include article-desktop {
+    display: none;
+  }
+}
+
+// Layout grid
+// -----------
 
 .article-layout {
-  display: flex;
-  align-items: flex-start;
-  gap: $spacing-unit * 1.5;
+  @include article-desktop {
+    display: grid;
+    grid-template-columns: 296px minmax(0, 834px) 240px;
+    grid-template-areas: "sidebar main toc";
+    justify-content: center;
+    align-items: start;
+  }
 }
 
+// Article list (sidebar on desktop, drawer on mobile)
+// ---------------------------------------------------
+
 .article-sidebar {
-  flex: 0 0 220px;
-  position: sticky;
-  top: $spacing-unit;
-  max-height: calc(100vh - #{$spacing-unit * 2});
-  overflow-y: auto;
+  background: $background-color;
+
+  @include article-desktop {
+    grid-area: sidebar;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    padding: 40px 26px 40px 44px;
+    overflow-y: auto;
+    border-right: 1px solid $article-line;
+  }
+
+  @include article-mobile {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    width: 77vw;
+    max-width: 320px;
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition: transform 0.25s ease, visibility 0s linear 0.25s;
+
+    .drawer-open & {
+      transform: none;
+      visibility: visible;
+      transition: transform 0.25s ease;
+    }
+  }
+}
+
+.sidebar-head {
+  @include article-mobile {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: space-between;
+    height: 52px;
+    padding: 0 10px 0 16px;
+    border-bottom: 1px solid $article-line;
+  }
+}
+
+.sidebar-label,
+.toc-title {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: $article-muted;
+}
+
+.sidebar-label {
+  @include article-desktop {
+    display: block;
+    margin-bottom: 12px;
+  }
+}
+
+.drawer-close {
+  margin: 0;
+
+  @include article-desktop {
+    display: none;
+  }
+}
+
+.sidebar-body {
+  @include article-mobile {
+    flex: 1;
+    padding: 16px 8px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
+
+.article-group + .article-group {
+  margin-top: 20px;
+}
+
+.article-group-year {
+  margin: 0 0 4px;
+  padding: 0 10px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.8;
+  color: #333;
 }
 
 .article-nav {
   list-style: none;
   margin: 0;
-  padding-left: 0;
+  padding: 0;
 
-  li {
-    margin-bottom: $spacing-unit * 0.5;
-    padding-left: 10px;
-    border-left: 2px solid transparent;
-  }
-
-  li.active {
-    border-left-color: $brand-color;
-
-    a {
-      font-weight: 600;
-    }
+  li + li {
+    margin-top: 2px;
   }
 
   a {
-    display: block;
-    color: $text-color;
-    line-height: 1.4;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 0.9375rem;
+    line-height: 1.5;
+    color: #333;
+
+    &:visited {
+      color: #333;
+    }
+
+    &:hover {
+      background: $article-subtle;
+      text-decoration: none;
+    }
+
+    &.active {
+      background: $article-accent-soft;
+      color: $article-accent;
+      font-weight: 600;
+
+      time {
+        color: $article-accent;
+      }
+    }
+
+    @include article-mobile {
+      padding: 10px;
+      font-size: 1rem;
+    }
   }
 
   time {
-    display: block;
-    font-size: $small-font-size;
-    color: $brand-color;
+    flex: none;
+    margin-left: auto;
+    font-size: 0.8125rem;
+    font-weight: 400;
+    color: $article-muted;
   }
 }
+
+.all-articles {
+  display: inline-block;
+  margin-top: 20px;
+  padding: 0 10px;
+  font-size: 0.875rem;
+  color: $article-accent;
+
+  &:visited {
+    color: $article-accent;
+  }
+
+  @include article-mobile {
+    display: none;
+  }
+}
+
+// Article body
+// ------------
 
 .article-main {
-  flex: 1 1 auto;
   min-width: 0;
-}
+  padding: 24px 16px 48px;
 
-@include media-query($on-laptop) {
-  .article-layout {
-    flex-direction: column;
-    gap: 0;
+  @include article-desktop {
+    grid-area: main;
+    padding: 56px 52px 80px;
   }
 
-  .article-sidebar {
-    position: static;
-    flex-basis: auto;
-    width: 100%;
-    max-height: none;
-    margin-bottom: $spacing-unit;
-    padding-bottom: $spacing-unit * 0.5;
-    border-bottom: 1px solid $border-color-01;
+  .post-header {
+    margin-bottom: 32px;
+    padding-bottom: 28px;
+    text-align: left;
+    border-bottom-color: $article-line;
+
+    @include article-desktop {
+      margin-bottom: 36px;
+      padding-bottom: 40px;
+    }
+  }
+
+  .post-title {
+    margin-bottom: 16px;
+    font-size: 1.875rem;
+    font-weight: 700;
+    line-height: 1.35;
+    letter-spacing: 0;
+    color: $article-text;
+
+    @include article-desktop {
+      font-size: 2.375rem;
+      line-height: 1.3;
+    }
+  }
+
+  .post-meta {
+    font-size: 1rem;
+    color: $article-muted;
+  }
+
+  .post-content {
+    font-size: 1.0625rem;
+    line-height: 1.85;
+    color: $article-text;
+
+    h2,
+    h3,
+    h4 {
+      font-weight: 700;
+      line-height: 1.4;
+      letter-spacing: 0;
+      color: $article-text;
+      scroll-margin-top: 72px;
+
+      @include article-desktop {
+        scroll-margin-top: 32px;
+      }
+    }
+
+    h2 {
+      margin-top: 48px;
+      font-size: 1.5rem;
+
+      @include article-desktop {
+        font-size: 1.625rem;
+      }
+    }
+
+    h3 {
+      margin-top: 32px;
+      font-size: 1.25rem;
+    }
+
+    h4 {
+      font-size: 1.0625rem;
+    }
+
+    strong {
+      font-weight: 700;
+      color: #111;
+    }
+
+    a {
+      color: $article-accent;
+    }
+
+    code {
+      padding: 2px 6px;
+      border: 0;
+      border-radius: 4px;
+      background: $article-code-bg;
+      color: $article-text;
+    }
+
+    pre > code,
+    .highlight code {
+      padding: 0;
+      background: none;
+    }
+
+    blockquote {
+      border-left-color: $article-line;
+      color: #555;
+      font-style: normal;
+      letter-spacing: 0;
+    }
+  }
+}
+
+// Table of contents (right column on desktop, sticky bar on mobile)
+// -----------------------------------------------------------------
+
+.article-toc {
+  @include article-desktop {
+    grid-area: toc;
+    position: sticky;
+    top: 0;
+    max-height: 100vh;
+    padding: 64px 0 40px 4px;
+    overflow-y: auto;
+  }
+
+  @include article-mobile {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: $article-subtle;
+    border-bottom: 1px solid $article-line;
+
+    .toc-open & {
+      z-index: 35;
+    }
+  }
+}
+
+.toc-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 46px;
+  padding: 0 16px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 0.9375rem;
+  text-align: left;
+  cursor: pointer;
+
+  @include article-desktop {
+    display: none;
+  }
+}
+
+.toc-bar-label {
+  flex: none;
+  color: $article-muted;
+}
+
+.toc-bar-current {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 600;
+  color: $article-accent;
+}
+
+.toc-bar-chevron {
+  flex: none;
+  margin-left: auto;
+  color: #555;
+  transition: transform 0.2s ease;
+}
+
+.toc-open {
+  .toc-bar-label {
+    font-size: 0;
+
+    &::after {
+      content: "本文目录";
+      font-size: 0.9375rem;
+    }
+  }
+
+  .toc-bar-current {
+    visibility: hidden;
+  }
+
+  .toc-bar-chevron {
+    transform: rotate(180deg);
+  }
+}
+
+.toc-title {
+  margin-bottom: 16px;
+
+  @include article-mobile {
+    display: none;
+  }
+}
+
+.toc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+
+  a {
+    position: relative;
+    display: block;
+    padding: 5px 0 5px 16px;
+    font-size: 0.875rem;
+    line-height: 1.55;
+    color: #555;
+
+    &:visited {
+      color: #555;
+    }
+
+    &:hover {
+      color: $article-accent;
+      text-decoration: none;
+    }
+
+    &.active {
+      color: $article-accent;
+      font-weight: 600;
+
+      &::before {
+        content: "";
+        position: absolute;
+        top: calc(5px + 0.775em - 3px);
+        left: 0;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: currentColor;
+      }
+    }
+  }
+
+  @include article-mobile {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    display: none;
+    max-height: calc(100vh - 120px);
+    padding: 8px 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: $background-color;
+    border-radius: 0 0 16px 16px;
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.12);
+
+    .toc-open & {
+      display: block;
+    }
+
+    a {
+      padding: 10px 16px 10px 32px;
+      font-size: 1rem;
+      color: $article-text;
+
+      &:visited {
+        color: $article-text;
+      }
+
+      &.active {
+        background: $article-accent-soft;
+
+        &::before {
+          top: calc(10px + 0.775em - 3px);
+          left: 16px;
+        }
+      }
+    }
+  }
+}
+
+.back-to-top {
+  display: inline-block;
+  margin-top: 28px;
+  font-size: 0.875rem;
+  color: $article-muted;
+
+  &:visited {
+    color: $article-muted;
+  }
+
+  &:hover {
+    color: $article-accent;
+    text-decoration: none;
+  }
+
+  @include article-mobile {
+    display: none;
+  }
+}
+
+.toc-progress {
+  @include article-mobile {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 3px;
+    background: $article-accent;
+    transform: scaleX(0);
+    transform-origin: left;
+
+    .toc-open & {
+      visibility: hidden;
+    }
+  }
+}
+
+// Shared backdrop for the drawer and the table of contents dropdown
+// -----------------------------------------------------------------
+
+.layout-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgba(0, 0, 0, 0.32);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s ease, visibility 0s linear 0.2s;
+
+  .drawer-open &,
+  .toc-open & {
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 0.2s ease;
+  }
+
+  @include article-desktop {
+    display: none;
+  }
+}
+
+@include article-mobile {
+  .drawer-open,
+  .toc-open {
+    overflow: hidden;
+  }
+}
+
+// Footer columns: first column on the left, second column on the right
+// --------------------------------------------------------------------
+
+.footer-col-wrapper {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: $spacing-unit;
+
+  .footer-col:last-child {
+    margin-left: auto;
+    text-align: right;
+
+    .social-media-list {
+      justify-content: flex-end;
+    }
+  }
+}
+
+// Footer social links
+// -------------------
+
+.footer-col .social-media-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+
+  li {
+    float: none;
+    min-width: 0;
+    min-height: 0;
+    margin: 0;
+
+    a {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+      width: 20px;
+      height: 20px;
+      padding: 0;
+      border: 0;
+      font-size: 14px;
+
+      &:hover {
+        text-decoration: none;
+      }
+    }
+
+    .fa-lg {
+      font-size: inherit;
+      line-height: 1;
+    }
   }
 }
