@@ -1,4 +1,4 @@
-title: tech-notes
+title: 椰风寨
 description: Write-ups of real production problems — what happened, why it happened, and what I took away from it.
 lang: zh-CN
 
@@ -16,9 +16,12 @@ relative_links:
 
 titles_from_headings:
   enabled: true
-  strip_title: false
+  strip_title: true
 
 exclude:
   - Gemfile
   - Gemfile.lock
   - vendor
+
+header_pages:
+  - chrome-shmem-dentry-part1.md
