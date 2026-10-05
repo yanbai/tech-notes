@@ -1,0 +1,24 @@
+title: tech-notes
+description: Write-ups of real production problems — what happened, why it happened, and what I took away from it.
+lang: zh-CN
+
+remote_theme: "jekyll/minima@1e8a445"
+
+plugins:
+  - jekyll-remote-theme
+  - jekyll-relative-links
+  - jekyll-optional-front-matter
+  - jekyll-titles-from-headings
+
+relative_links:
+  enabled: true
+  collections: false
+
+titles_from_headings:
+  enabled: true
+  strip_title: false
+
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - vendor
