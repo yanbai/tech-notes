@@ -1,4 +1,4 @@
-# 一个 headless Chrome Pod 是怎么漏掉 3GB 内核内存的（上篇：诊断）
+# Puppeteer 内存只涨不跌？--disable-dev-shm-usage 与 dentry 缓存（上篇：诊断）
 
 `--disable-dev-shm-usage` 让 Chrome 把共享内存建在 `/tmp` 上，产生的大量 dentry 撑大了可回收的 slab 缓存，又被算进了容器内存，看起来像内存泄漏，其实不是。
 
