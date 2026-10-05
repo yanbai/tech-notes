@@ -22,7 +22,3 @@ exclude:
   - Gemfile
   - Gemfile.lock
   - vendor
-
-header_pages:
-  - chrome-shmem-dentry-part1.md
-  - chrome-shmem-dentry-part2.md
