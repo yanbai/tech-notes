@@ -1,0 +1,40 @@
+---
+layout: base
+---
+{%- assign date_format = site.minima.date_format | default: "%Y-%m-%d" -%}
+{%- assign articles = site.pages | where_exp: "p", "p.name contains '.md'" | where_exp: "p", "p.url != '/'" | sort: "name" -%}
+{%- assign page_date = site.data.dates[page.name] -%}
+<div class="article-layout">
+
+  <aside class="article-sidebar">
+    <nav aria-label="Articles">
+      <ul class="article-nav">
+        {%- for article in articles %}
+        {%- assign article_date = site.data.dates[article.name] %}
+        <li{% if article.url == page.url %} class="active"{% endif %}>
+          <a href="{{ article.url | relative_url }}">{{ article.title | escape }}</a>
+          {%- if article_date %}
+          <time datetime="{{ article_date | date_to_xmlschema }}">{{ article_date | date: date_format }}</time>
+          {%- endif %}
+        </li>
+        {%- endfor %}
+      </ul>
+    </nav>
+  </aside>
+
+  <article class="post article-main">
+    <header class="post-header">
+      <h1 class="post-title">{{ page.title | escape }}</h1>
+      {%- if page_date %}
+      <p class="post-meta">
+        <time datetime="{{ page_date | date_to_xmlschema }}">{{ page_date | date: date_format }}</time>
+      </p>
+      {%- endif %}
+    </header>
+
+    <div class="post-content">
+      {{ content }}
+    </div>
+  </article>
+
+</div>

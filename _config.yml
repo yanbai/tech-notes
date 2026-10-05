@@ -22,3 +22,14 @@ exclude:
   - Gemfile
   - Gemfile.lock
   - vendor
+
+# Every root-level Markdown page is an article; README stays the homepage.
+defaults:
+  - scope:
+      path: "*.md"
+    values:
+      layout: article
+  - scope:
+      path: "README.md"
+    values:
+      layout: home
