@@ -48,14 +48,6 @@ body:has(.article-layout) {
       display: flex;
       align-items: center;
       gap: 16px;
-      box-sizing: border-box;
-      max-width: $article-max-width;
-      margin: 0 auto;
-      padding: 0 44px;
-
-      @include article-mobile {
-        padding: 0 16px;
-      }
     }
   }
 
@@ -68,6 +60,39 @@ body:has(.article-layout) {
       color: $article-text;
     }
   }
+}
+
+// The homepage shares the article page width; the footer matches the header.
+body:has(.article-layout) .site-header .wrapper,
+body:has(.article-layout) .site-footer .wrapper,
+body:has(.home) .site-header .wrapper,
+body:has(.home) .site-footer .wrapper,
+body:has(.home) .page-content > .wrapper {
+  box-sizing: border-box;
+  max-width: $article-max-width;
+  margin: 0 auto;
+  padding: 0 44px;
+
+  @include article-mobile {
+    padding: 0 16px;
+  }
+}
+
+.site-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+
+  &:hover {
+    text-decoration: none;
+  }
+}
+
+.site-logo {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
 }
 
 .drawer-toggle,
@@ -456,7 +481,7 @@ body:has(.article-layout) {
     font-size: 0;
 
     &::after {
-      content: "本文目录";
+      content: "On This Page";
       font-size: 0.9375rem;
     }
   }
@@ -632,6 +657,10 @@ body:has(.article-layout) {
   justify-content: space-between;
   align-items: flex-start;
   gap: $spacing-unit;
+
+  .footer-col {
+    margin-bottom: 0;
+  }
 
   .footer-col:last-child {
     margin-left: auto;

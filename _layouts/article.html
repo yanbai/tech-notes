@@ -20,10 +20,10 @@ layout: base
 {%- assign heading_chunks = content | split: '<h2 id="' -%}
 <div class="article-layout">
 
-  <aside class="article-sidebar" id="article-sidebar" aria-label="全部文章">
+  <aside class="article-sidebar" id="article-sidebar" aria-label="All articles">
     <div class="sidebar-head">
-      <span class="sidebar-label">全部文章</span>
-      <button class="drawer-close" type="button" aria-label="关闭" data-drawer-close>
+      <span class="sidebar-label">All Articles</span>
+      <button class="drawer-close" type="button" aria-label="Close" data-drawer-close>
         <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M5 5l14 14M19 5L5 19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
       </button>
     </div>
@@ -62,18 +62,18 @@ layout: base
         {%- endfor %}
       </ul>
 
-      <a class="all-articles" href="{{ '/' | relative_url }}">查看全部文章 →</a>
+      <a class="all-articles" href="{{ '/' | relative_url }}">View all articles →</a>
     </nav>
   </aside>
 
   {%- if heading_chunks.size > 1 %}
-  <aside class="article-toc" aria-label="本文目录" data-toc>
+  <aside class="article-toc" aria-label="On this page" data-toc>
     <button class="toc-bar" type="button" aria-expanded="false" aria-controls="toc-list" data-toc-toggle>
-      <span class="toc-bar-label">目录</span>
+      <span class="toc-bar-label">Contents</span>
       <span class="toc-bar-current" data-toc-current></span>
       <svg class="toc-bar-chevron" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
-    <p class="toc-title">本文目录</p>
+    <p class="toc-title">On This Page</p>
     <ol class="toc-list" id="toc-list">
       {%- for chunk in heading_chunks offset: 1 %}
       {%- assign heading_id = chunk | split: '"' | first %}
@@ -81,7 +81,7 @@ layout: base
       <li><a href="#{{ heading_id }}">{{ heading_text }}</a></li>
       {%- endfor %}
     </ol>
-    <a class="back-to-top" href="#">↑ 回到顶部</a>
+    <a class="back-to-top" href="#">↑ Back to top</a>
     <span class="toc-progress" aria-hidden="true" data-toc-progress></span>
   </aside>
   {%- endif %}
