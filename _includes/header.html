@@ -1,14 +1,14 @@
 <header class="site-header">
 
   <div class="wrapper">
+    <a class="site-title" rel="author" href="{{ '/' | relative_url }}">
+      <img class="site-logo" src="{{ '/assets/images/avatar-64.png' | relative_url }}" width="32" height="32" alt="">
+      <span>{{ site.title | escape }}</span>
+    </a>
     {%- if page.layout == "article" %}
     <button class="drawer-toggle" type="button" aria-label="All articles" aria-controls="article-sidebar" aria-expanded="false" data-drawer-open>
       <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
     </button>
     {%- endif %}
-    <a class="site-title" rel="author" href="{{ '/' | relative_url }}">
-      <img class="site-logo" src="{{ '/assets/images/avatar-64.png' | relative_url }}" width="32" height="32" alt="">
-      <span>{{ site.title | escape }}</span>
-    </a>
   </div>
 </header>

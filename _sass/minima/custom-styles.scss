@@ -116,6 +116,9 @@ body:has(.home) .page-content > .wrapper {
 }
 
 .drawer-toggle {
+  margin-left: auto;
+  margin-right: -6px;
+
   @include article-desktop {
     display: none;
   }
