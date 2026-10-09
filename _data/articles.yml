@@ -7,3 +7,9 @@ chrome-shmem-dentry-part1.md:
 chrome-shmem-dentry-part2.md:
   date: 2026-10-05
   nav_title: Puppeteer 内存只涨不跌？（下篇：修复）
+flight-time-great-circle.md:
+  date: 2026-10-09
+  nav_title: 别买数据，先算一遍：大圆距离补飞行时长
+electric-plugs-wikidata.md:
+  date: 2026-10-09
+  nav_title: 42193 条空字符串：插座字段与 Wikidata
