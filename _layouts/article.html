@@ -9,7 +9,7 @@ layout: base
 {%- assign years = "" | split: "" -%}
 {%- for article in articles -%}
   {%- assign article_date = site.data.articles[article.name].date -%}
-  {%- if article_date -%}
+  {%- if article_date and site.data.articles[article.name].unlisted != true -%}
     {%- assign year = article_date | date: "%Y" -%}
     {%- assign years = years | push: year -%}
   {%- endif -%}
@@ -36,7 +36,7 @@ layout: base
           {%- for article in articles %}
           {%- assign meta = site.data.articles[article.name] %}
           {%- assign article_year = meta.date | date: "%Y" %}
-          {%- if article_year == year %}
+          {%- if article_year == year and meta.unlisted != true %}
           <li>
             <a href="{{ article.url | relative_url }}"{% if article.url == page.url %} class="active" aria-current="page"{% endif %}>
               <span class="article-nav-title">{{ meta.nav_title | default: article.title | escape }}</span>
@@ -52,7 +52,7 @@ layout: base
       {%- comment -%} Articles without a date in _data/articles.yml are listed last. {%- endcomment -%}
       <ul class="article-nav">
         {%- for article in articles %}
-        {%- unless site.data.articles[article.name].date %}
+        {%- unless site.data.articles[article.name].date or site.data.articles[article.name].unlisted == true %}
         <li>
           <a href="{{ article.url | relative_url }}"{% if article.url == page.url %} class="active" aria-current="page"{% endif %}>
             <span class="article-nav-title">{{ site.data.articles[article.name].nav_title | default: article.title | escape }}</span>

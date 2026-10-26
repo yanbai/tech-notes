@@ -148,6 +148,114 @@ v26 的机制复用了项目里已有的东西：附在 prompt 末尾的每语�
 | Tours 页在对比表里重复了其他品类的价格 | 去掉跨品类表格，只保留该品类自己的数字 | 把数据范围收窄，同时也是一道幻觉防线，因为没有可以串错的东西了 |
 | 表格前需要一句引导句 | 把"标题后直接跟表格，不许有引导句"改成"必须有且只有一句引导句，不带数字、不点名、不加粗" | 一条窄而可检查的指令胜过含糊的指令 |
 
+表里的"问题"写得比较简略，下面逐条给一个具体例子。数据和规则文字取自真实的 prompt 与批次结果，输出句子是按当时缺陷的形态还原的示意，不是逐字摘录。
+
+#### 例 1：`p25 / p50 / p75` 被印进文案
+
+模型拿到的数据：
+
+```
+p25: 68    p50: 105    p75: 350    currency: SGD
+```
+
+改之前，规则写的是 "State the typical price (p50) and the range (p25–p75)"。模型把括号里的字母当成可以引用的词：
+
+> 该品类的 p50 价格约为 SGD 105，p25–p75 区间为 SGD 68–350。
+
+读者不知道 p50 是什么。改之后，规则要求用文字表述，不许打印这几个字母：
+
+> 该品类的典型价格约为 SGD 105，大多数价格落在 SGD 68 到 350 之间。
+
+#### 例 2：酒店等级的 key 原样输出
+
+模型拿到的数据：
+
+```
+best_value_tier: premium
+biggest_jump_from: standard
+biggest_jump_to: premium
+```
+
+改之前，规则只说"等级要写成目标语言里的普通词"。模型对等级列照做了，但这三个字段不在"等级列"里，于是 `zh_TW` 输出：
+
+> 性價比最高的是 premium 等級，從 standard 升到 premium 價格跳升最明顯。
+
+改之后，规则点名了字段："这条也适用于 `best_value_tier`、`biggest_jump_from`、`biggest_jump_to`"：
+
+> 性價比最高的是高級酒店，從標準等級升到高級價格跳升最明顯。
+
+#### 例 3：子品类表格多出一行本页品类
+
+页面是 Tours。上下文里有 5 个对比行，另有一张"本品类的典型价格"卡片：
+
+```
+对比行：Observation decks / Museums / Theme parks / Cultural experiences / Attractions
+本品类卡片：Tours  typical 49
+```
+
+这 5 行里没有 Tours。模型想把表格做得"完整"，就用那张卡片补了第 6 行：
+
+```
+| Observation decks    | SGD 26 | SGD 22 – 28  |
+| Museums              | SGD 39 | SGD 24 – 44  |
+| Theme parks          | SGD 49 | SGD 31 – 57  |
+| Cultural experiences | SGD 40 | SGD 23 – 84  |
+| Attractions          | SGD 55 | SGD 30 – 90  |
+| Tours                | SGD 49 | SGD 22 – 104 |   ← 多出来的一行
+```
+
+改之后，规则写明"表格的数据行数等于对比行数，不多不少；本品类只有它本身就是对比行之一时才有一行，不要用另一张卡片去造一行"，输出恢复为 5 行。
+
+#### 例 4：数据缺失时，可选章节的指令仍在 prompt 里
+
+城市页模板有 4 节，第 3 节"Where to stay"依赖"酒店分区价格"数据。假设某个城市没有这份数据。
+
+改之前，第 3 节的指令照样留在 prompt 里，而上下文里没有对应的数据块。模型要么跳过这一节，要么开始编造，另一条规则"列出的章节都必须写"还在跟它拉扯。输出里章节编号是 1、2、4，或者第 3 节是编出来的。
+
+改之后，渲染阶段检测到这个数据块缺失，直接把第 3 节的全部指令删掉。prompt 里只剩有数据的三节，模型没有可纠结的指令，还少了几百个 token。
+
+#### 例 5：Tours 页重复了其他品类的价格
+
+页面是东京的 Tours。改之前，正文后面带一张跨品类对比表：
+
+```
+Category              Typical Price   Usual Range
+Observation decks     SGD 26          SGD 22 – 28
+Museums               SGD 39          SGD 24 – 44
+Theme parks           SGD 49          SGD 31 – 57
+Cultural experiences  SGD 40          SGD 23 – 84
+Tours                 SGD 49          SGD 22 – 104
+```
+
+Tours 页展示别的品类的价格，既偏题，也给了模型串错数字的机会。改之后，prompt 里不再提供其他品类的数据，入库校验还会把任何表格标为无效，输出只剩一段该品类自己的价格：
+
+> Entry-level excursions typically start around SGD 22, mid-range options sit around SGD 49, and premium tours reach up to SGD 104.
+
+#### 例 6：表格前需要一句引导句
+
+改之前，规则是"标题后直接跟表格，不许有引导句"，输出：
+
+```
+## How prices compare
+Category | Typical Price | Usual Range
+...
+```
+
+标题和表格之间什么都没有，读起来很突兀。改之后，规则是"必须有且只有一句引导句，不带数字、不点名品类、不加粗"：
+
+```
+## How prices compare
+The table below compares the most popular categories by price,
+so you can check your budget before choosing.
+
+| Category | Typical Price | Usual Range |
+...
+```
+
+"不带数字、不点名、不加粗"这几条限制，是为了让这句话不与下面表格里的数字重复，也不会出错。
+
+这六条的共同点是：模型的行为符合字面指令，但指令本身有缺口。例 1、2 是漏了具体字段，例 3 是没说"完整"的边界，例 4 是指令比数据多，例 5 是给了不该给的数据，例 6 是规则写得太绝对。补齐缺口就修好了，不需要代码接管。
+
 反面的一个失败也值得记下：硬性计数类的规则没有起作用。我加了"每段最多三处加粗"之后，下一批每个模板里仍有超限的答案（四个模板分别是 21、13、7、12 条），字数和标题长度的范围也一直在漂。小模型数不准数。我不再追这几项了。这就引出了取舍。
 
 ## 第三部分：取舍本身就是 prompt 工程的能力

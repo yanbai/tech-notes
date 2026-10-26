@@ -148,6 +148,114 @@ Not everything needed code. These prompt-only changes worked, and they share a p
 | Tours page repeated other verticals' prices in a comparison table | Remove the cross-category table; only that category's own figures | A request to scope down the data is also a hallucination guard, since there is nothing left to mix up |
 | A table needed a lead-in sentence | Replace "heading, then table, no lead-in" with "exactly one lead-in sentence, no numbers, no names, no bold" | A narrow, checkable instruction beats a vague one |
 
+The "Problem" column is terse, so here is one concrete example per row. The data and rule wording come from the real prompts and batch results; the output sentences are illustrative reconstructions of the defect's shape, not verbatim quotes.
+
+#### Example 1: `p25 / p50 / p75` printed in copy
+
+The data the model received:
+
+```
+p25: 68    p50: 105    p75: 350    currency: SGD
+```
+
+Before, the rule said "State the typical price (p50) and the range (p25–p75)". The model took the letters in the parentheses as words it could quote:
+
+> The p50 price for this category is about SGD 105, with a p25–p75 range of SGD 68–350.
+
+A reader has no idea what p50 means. After, the rule required words and forbade printing those letters:
+
+> The typical price for this category is about SGD 105, and most prices fall between SGD 68 and SGD 350.
+
+#### Example 2: hotel class keys printed raw
+
+The data the model received:
+
+```
+best_value_tier: premium
+biggest_jump_from: standard
+biggest_jump_to: premium
+```
+
+Before, the rule only said "write hotel classes as ordinary words in the target language". The model did that for the class column, but these three fields are not in the class column, so `zh_TW` came out as:
+
+> 性價比最高的是 premium 等級，從 standard 升到 premium 價格跳升最明顯。
+
+After, the rule named the fields: "this also holds for `best_value_tier`, `biggest_jump_from` and `biggest_jump_to`":
+
+> 性價比最高的是高級酒店，從標準等級升到高級價格跳升最明顯。
+
+#### Example 3: sub-category table gained a sixth row for the page's own category
+
+The page is Tours. The context held 5 comparison rows plus a separate "typical price for this category" card:
+
+```
+comparison rows: Observation decks / Museums / Theme parks / Cultural experiences / Attractions
+this-category card: Tours  typical 49
+```
+
+Tours is not among the 5 rows. The model tried to make the table "complete" and built a sixth row from the card:
+
+```
+| Observation decks    | SGD 26 | SGD 22 – 28  |
+| Museums              | SGD 39 | SGD 24 – 44  |
+| Theme parks          | SGD 49 | SGD 31 – 57  |
+| Cultural experiences | SGD 40 | SGD 23 – 84  |
+| Attractions          | SGD 55 | SGD 30 – 90  |
+| Tours                | SGD 49 | SGD 22 – 104 |   ← the extra row
+```
+
+After, the rule said "the table has exactly as many data rows as there are comparison rows; this category gets a row only when it is itself one of them; never build one from another card". The output went back to 5 rows.
+
+#### Example 4: optional sections instructed even when their data was absent
+
+The city template has 4 sections, and section 3, "Where to stay", depends on hotel price-by-district data. Suppose one city has no such data.
+
+Before, the instructions for section 3 stayed in the prompt while the context had no matching block. The model either skipped the section or started inventing it, while another rule ("write every listed section") pulled the other way. The output was numbered 1, 2, 4, or section 3 was made up.
+
+After, the render step detected the missing block and removed all of section 3's instructions. The prompt held only the three sections that had data, so the model had nothing to agonise over, and the prompt was a few hundred tokens shorter.
+
+#### Example 5: Tours page repeated other verticals' prices
+
+The page is Tours for Tokyo. Before, the body was followed by a cross-category comparison table:
+
+```
+Category              Typical Price   Usual Range
+Observation decks     SGD 26          SGD 22 – 28
+Museums               SGD 39          SGD 24 – 44
+Theme parks           SGD 49          SGD 31 – 57
+Cultural experiences  SGD 40          SGD 23 – 84
+Tours                 SGD 49          SGD 22 – 104
+```
+
+A Tours page showing other categories' prices is off-topic, and it gives the model a chance to mix up numbers. After, the prompt no longer supplied the other categories' data, and the ingest check marks any table in that output invalid. What remained was one paragraph with the category's own prices:
+
+> Entry-level excursions typically start around SGD 22, mid-range options sit around SGD 49, and premium tours reach up to SGD 104.
+
+#### Example 6: a table needed a lead-in sentence
+
+Before, the rule was "heading, then table, no lead-in", and the output was:
+
+```
+## How prices compare
+Category | Typical Price | Usual Range
+...
+```
+
+Nothing sits between the heading and the table, which reads abruptly. After, the rule was "exactly one lead-in sentence, no numbers, no category names, no bold":
+
+```
+## How prices compare
+The table below compares the most popular categories by price,
+so you can check your budget before choosing.
+
+| Category | Typical Price | Usual Range |
+...
+```
+
+The "no numbers, no names, no bold" limits keep that sentence from repeating the table's figures or going wrong.
+
+What the six have in common is that the model followed the literal instruction, but the instruction had a gap. Examples 1 and 2 missed specific fields, example 3 did not say where "complete" ends, example 4 had more instructions than data, example 5 supplied data it should not have, and example 6 was written too absolutely. Closing the gap fixed each one, with no code taking over.
+
 One failure worth recording on the other side: rules for hard counts did not hold. After I added a limit of three bold spans per paragraph, the next batch still had answers over the limit in every template (21, 13, 7 and 12 in four of them), and word and title ranges kept drifting too. A small model does not count reliably. I stopped chasing them. Which brings me to triage.
 
 ## Part 3: Triage is a prompt-engineering skill

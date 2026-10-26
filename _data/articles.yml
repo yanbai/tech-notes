@@ -15,6 +15,7 @@ electric-plugs-wikidata.md:
   nav_title: 42193 条空字符串：插座字段与 Wikidata
 llm-seo-copy-prompt-revisions.md:
   date: 2026-10-22
+  unlisted: true
   nav_title: 27 prompt revisions and the English that still leaked
 llm-seo-copy-prompt-revisions-zh.md:
   date: 2026-10-22
