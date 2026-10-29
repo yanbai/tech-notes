@@ -46,94 +46,311 @@ The common thread of this section is a rule of thumb I wish I had applied on day
 
 ### 1.1 A Chinese sentence copied into a Japanese page
 
-Symptom. A `zh_HK` page ended with the English sentence "Based on Company booking data, July 2025 to June 2026." A different page, in Japanese, ended with a Simplified Chinese attribution sentence.
+Every page ends with a data attribution sentence, and two things decide it: the page's language and the card's data window (start and end month). In English it reads "Based on Company booking data, July 2025 to June 2026."; in Japanese it is the same sentence in Japanese, with the months written as 2025年7月 and 2026年6月.
 
-First instinct was to strengthen the prompt, but the prompt already had a hard requirement, correct and incorrect examples, and a "read the last sentence back" self-check. The other locales in the same batch were correct, so the failure was probabilistic, not a missing rule.
+Symptom. A `zh_HK` page ended with the English sentence "Based on Company booking data, July 2025 to June 2026." A different page, in Japanese, ended with a Simplified Chinese attribution sentence. The other locales in the same batch were correct.
 
-Then the Japanese case gave away the mechanism. The template contained worked examples, one per locale, and the data window on that card happened to be exactly `2025-07 - 2026-06`, the same dates as in the `zh_CN` example. The model did not mistranslate, it copied the example line wholesale, punctuation included. A second card in the same response used a different branch whose example dates did not match, and that one came out in correct Japanese. Same model, same call, different outcome, decided by whether the example matched.
+The old setup let the model write the sentence. The template held one worked example per locale, plus translation rules, correct and incorrect examples, and a "read the last sentence back" self-check, about 2,260 characters in all. Roughly like this (a reconstruction of the idea, not the literal text):
 
-Fix (prompt v5 to v6). The sentence is entirely mechanical: a locale and two `YYYY-MM` values. Code now builds it and places a finished `attribution:` line in the context block; the template says to copy that line verbatim. Month names come from `Intl.DateTimeFormat` rather than a hand-written table of 48 locales, with the calendar and numbering system pinned to `-u-ca-gregory-nu-latn`. That pin is not decoration: without it `th_TH` prints 2568 (Buddhist calendar) and `ar_SA` uses the Islamic calendar with Arabic-Indic digits.
+```
+End the page with one data attribution sentence. It must be in the page's
+language, and the dates are this card's data window.
+Examples:
+- en:    Based on Company booking data, July 2025 to June 2026.
+- zh_CN: 基于 Company 预订数据，2025年7月至2026年6月。
+- ja:    ……
+```
 
-Benefit. The leak path is closed by construction, not by lowering a probability. On tokens, the change removed about 2,260 characters of translation instructions and added about three short lines, a net of roughly minus 13% per request (about 3,384 down to about 2,930 tokens on the measured sample).
+First instinct was to strengthen the prompt, but the hard requirement, the examples and the self-check were already there, and the other locales were fine, so the failure was probabilistic, not a missing rule.
 
-A subtlety worth recording, because I almost got it wrong: the removed block sat inside the cached prefix (billed at 10%) while the added lines sit in the variable tail (billed at 100%). So the bill drops by less than the token count does. The saving grows as the cache hit rate falls.
+The Japanese case gave away the mechanism. The data window on that card happened to be exactly `2025-07` to `2026-06`, the same dates as in the `zh_CN` example. The model had to write "source + July 2025 to June 2026", and the context already held a finished sentence with exactly those dates. It did not rewrite it in Japanese, it copied the Chinese line wholesale, punctuation included. The English sentence on the `zh_HK` page has the same cause.
 
-What generalises: models copy worked examples. If an example contains a finished sentence and your data can coincide with it, it will be returned as the answer. Prefer abstract placeholders in examples, or take the sentence out of the model's hands.
+The best evidence is a second card in the same response. Its dates did not match any example, and the model wrote correct Japanese for it. Same model, same prompt, and the outcome depended only on whether the example dates happened to coincide. When the model sees a string that already looks like the answer, it copies it. Strengthening the prompt only lowers the odds.
+
+One more point: what was wrong was the language of the whole sentence. The dates were right. They were only the trigger. So the fix could not be limited to the date part; the whole sentence had to leave the model's hands.
+
+Fix (prompt v5 to v6). The sentence is entirely mechanical: a locale and two months. The model does not need to write it, so code does, in two parts.
+
+The first half comes from a table in the code: one hand-translated, reviewed sentence per locale, with a `{range}` placeholder where the months go. Only the brand name stays in English:
+
+```ts
+en:    'Based on Company booking data, {range}.',
+zh_HK: '根據 Company 預訂數據，{range}。',
+// ... other locales
+```
+
+The months come from `Intl.DateTimeFormat`, instead of a hand-written month table for 48 locales:
+
+```js
+const fmt = new Intl.DateTimeFormat('ja-JP-u-ca-gregory-nu-latn',
+  { year: 'numeric', month: 'long' });
+fmt.format(new Date(2025, 6));   // "2025年7月"
+```
+
+The code picks the template for the page's locale, fills `{range}` with the two formatted months, and puts the finished sentence in the context block:
+
+```
+attribution: Company の予約データに基づく、2025年7月 – 2026年6月。
+```
+
+The template now has one requirement left: end the page with the `attribution` line, verbatim. If a locale has no template in the table, the code throws instead of generating with a gap.
+
+The `-u-ca-gregory-nu-latn` suffix on the locale is a Unicode extension that pins two things: `ca-gregory` fixes the calendar to Gregorian, and `nu-latn` fixes the digits to 0 to 9. Without it each locale uses its own default: `th_TH` uses the Buddhist calendar and prints 2568 for 2025, and `ar_SA` uses the Islamic calendar with Arabic-Indic digits. Every other figure in the copy is a Gregorian year in Latin digits, and the attribution has to agree with them, so the pin is not decoration.
+
+Benefit. The model now holds one sentence that is already in the right language, so even if all it does is copy, it copies the right thing. The leak path no longer exists by construction. On tokens, the change removed about 2,260 characters of translation instructions and added about three short lines, a net of roughly minus 13% per request (about 3,384 down to about 2,930 tokens on the measured sample).
+
+The bill drops by less than the token count does, which I almost got wrong. The removed block sat inside the cached prefix and was billed at 10%, while the new `attribution` line differs on every request, sits in the variable tail and is billed at 100%. The saving grows as the cache hit rate falls.
+
+What generalises: models copy worked examples. If an example contains a finished sentence and the real data can coincide with it, the model will return it as the answer. There are two ways out: use abstract placeholders in examples (for instance "{start month} to {end month}"), or do what I did here and take the mechanical sentence out of the model's hands.
+
+| What went wrong | Effect after the fix | The fix |
+|---|---|---|
+| A `zh_HK` page ended with the English sentence "Based on Company booking data, July 2025 to June 2026."; a Japanese page ended with a Simplified Chinese attribution sentence (the model copied wholesale the example whose dates happened to be identical) | The model only copies one finished `attribution:` line, so every locale gets a sentence in its own language; the leak path is closed by construction, and a request is about 13% fewer tokens | Code holds one hand-translated template per locale with a `{range}` placeholder; the months come from `Intl.DateTimeFormat` (pinned to `-u-ca-gregory-nu-latn`); the filled sentence goes into the context and about 2,260 characters of translation instructions were removed from the template |
 
 ### 1.2 English category names inside a Japanese page
 
-Symptom. Rows contained "Observation decks", "Events & shows" and "Tours" in `ja_JP`, `ko_KR` and `zh_HK` pages.
+Symptom. Pages show category names such as "Observation decks", "Events & shows" and "Tours". In the `ja_JP`, `ko_KR` and `zh_HK` pages those names came out in English.
 
-Cause. The template told the model, five times (once per sub-template): "sub_category_name arrives in English, write it in target_language". Delegating a translation of a proper label is how you get three different outcomes: Korean copied "Tours" unchanged, Hong Kong Chinese invented a classifier ("Tour 類活動"), and Japanese happened to get it right.
+Cause. The data card stored the category name in English, and the template (five sub-templates, so five copies) told the model to translate it: "sub_category_name arrives in English, write it in target_language".
 
-Fix. The site already has the real names, in every language, in its frontend category tree. The data cards now store the category id, not the English name, and the prompt-rendering step swaps in the locale's official name before the model ever sees it. The template changed from "translate it" to "copy it verbatim; do not translate, reword, add a classifier, or put the English in brackets". A page whose name cannot be resolved is declined (`renderable: false`) rather than generated with an English name, because an empty pack would otherwise fail silently: nobody files a bug for a Japanese page with one English noun in it.
+A category name is a proper label. It has to match what the rest of the site calls it, and it cannot be improvised each time. Asked to translate, the model gave three different results for the same word: Korean copied "Tours" unchanged, Cantonese invented "Tour 類活動" (a category name the site does not have), and Japanese happened to get it right.
 
-Then the long tail:
+So the problem was not how well the model translates. It was that translating should never have been its job: it does not know what the site officially calls the category.
 
-- 36 locales had gaps in the official tree, including the main markets for one node (a Japan bus ticket category). An LLM-translated overlay fills them.
-- My first guard rejected a whole language whenever any name came back identical to the English. Arabic "eSIM" is correctly written "eSIM", so 134 good translations were thrown away because of one word that should not change. The guard became proportional: individual identical names are kept and listed for a human, and only a high share (above 20%, with a minimum sample of 5) means the model did not translate.
-- English variants such as `en-AE` do not need translating at all; the fallback chain already reaches `en`.
-- Re-running a translation at temperature 0 gives the same output, so "just rerun it" verified nothing. I had suggested exactly that, and had to retract it.
-- The packs were first generated at image build time, then moved to committed JSON files with one key per line. Translations change a few times a year, so a network fetch on every build buys freshness nobody needs and adds a new way for the build to fail. One key per line matters because the only review question is "which name changed".
+Fix. The site's front end already has a category tree that holds the official name of every category in every language. Roughly like this (illustrative):
 
-For rows already generated, a backfill script replaced the names in place. It refuses ambiguous cases (one English name mapping to two ids) and counts them instead of guessing.
+```
+category id = 123
+  en:    Tours
+  ja:    ツアー
+  ko:    투어
+  zh_HK: 觀光團
+```
+
+Three changes:
+
+- The data card now stores the category id instead of the English name.
+- When the prompt is rendered, before the model sees anything, code looks the id up in the tree and fills in the official name for that locale. The model already sees the correct Japanese or Korean name.
+- The template changed from "translate it" to "copy it verbatim: do not translate, do not rephrase, do not add a category word, do not add the English in brackets".
+
+A page whose name cannot be resolved is not rendered at all (`renderable: false`). Nobody files a bug for one English noun inside a Japanese page, so the defect would sit live indefinitely. I would rather the page not exist.
+
+Once the main path worked, a few edge problems remained:
+
+- The official tree has gaps in 36 locales, and one node (the Japan bus pass category) is missing even in the main markets. I added a supplement layer: the missing names are translated by an LLM ahead of time and stored, and a lookup checks the official name first, then the supplement. An LLM is involved here, but as a one-off, archived, reviewable translation, not a translation done on the fly while generating a page.
+- My first guard rule for the supplement layer was too strict: if a single name equalled its English original, the whole locale was declared untranslated and thrown away. In Arabic, eSIM is simply written "eSIM", so 134 well-translated names were dropped because of one word. The guard now works on a ratio: a single identical name is kept and listed for a human to look at, and only a high share (over 20%, with at least 5 samples) counts as the model not having translated.
+- English variants such as `en-AE` need no translation. The fallback chain goes to `en` when `en-AE` has no name.
+- Translation runs at temperature 0, so rerunning gives identical output, and "rerun it to check consistency" verifies nothing. That was my own suggestion, and I had to withdraw it.
+- The language pack was first generated during the image build, and later became a JSON file committed to the repo, one key per line, for example `"123": "ツアー"`. Category names change a few times a year, and a network call on every build buys freshness nobody needs and adds one more way for the build to fail. One key per line is for review: the diff shows which name changed, and that is the only question a reviewer has.
+
+For pages already generated with English names, a backfill script replaces the names in place. When a case is ambiguous, for instance one English name that maps to two category ids, the script refuses and counts it instead of guessing.
+
+Takeaway. When a name has an official answer, do not have the model translate it. Store the id, let code look up the official name, and let the model copy it. If the name cannot be found, do not generate. Do supplementary translation ahead of time, archive it and make it reviewable. Judge guard rules by ratio so they do not kill good translations.
+
+| What went wrong | Effect after the fix | The fix |
+|---|---|---|
+| `ja_JP`, `ko_KR` and `zh_HK` pages showed "Observation decks", "Events & shows" and "Tours"; asked to translate, the model gave three results: Korean copied "Tours", Cantonese invented "Tour 類活動", Japanese happened to be right | The model sees the official category name for that locale and only copies it verbatim; a page whose name cannot be resolved is not rendered (`renderable: false`) | The data card stores the category id, and when the prompt is rendered the name is looked up by id in the front-end category tree, with a supplement layer translated by an LLM ahead of time for the gaps; the template changed from "translate it" to "copy it verbatim"; pages already generated are fixed in place by a backfill script |
 
 ### 1.3 "Demand vs a typical month" showed numbers where words were wanted
 
-A product request: show a demand level in words in the month table, not +59% and -57%.
+Symptom. The product has a month table, and one column is "Demand vs a typical month". It used to show percentages:
 
-My first plan was a prompt-only change. It would have broken everything, because an ingest check required that column to be a signed percentage matching the data, so every row would have been rejected. The prompt and the checker have to change together.
+```
+Month    Demand
+Jul      +59%
+Feb      -57%
+```
 
-Then I made the model do the classification, and the second request was the right one: let code decide the level from the percentage (`demandLevel(delta_pct)` returns peak, busier, average, quieter or very quiet) and let the model only phrase it. This moved a judgement from the model to a function.
+Product then asked for something new: this column should show a word-level tier instead of a number, such as "peak", "busier than usual", "average", "quieter than usual" and "very quiet".
+
+The first time, I changed only the prompt and told the model to turn the percentage into words. Every row was rejected. Before the model's content is written to the database there is an ingest check, and its rule was that this column must be a signed percentage that matches the source data. Once the model wrote words, no row satisfied it. The prompt and the check are two halves of one rule, and changing one half guarantees a clash.
+
+The second time, I let the model look at the percentage and decide the tier itself, for instance whether +59% counts as "peak" or "busier". That was the wrong direction too. The same number could land in different tiers on different pages and in different languages, so the result was unstable and could not be guaranteed.
+
+The fix has three steps.
+
+First, code decides the tier. A function `demandLevel(delta_pct)` takes the percentage and returns one of five tiers by fixed thresholds:
+
+| Tier | Meaning |
+|---|---|
+| `peak` | peak season |
+| `busier` | busier than usual |
+| `average` | average |
+| `quieter` | quieter than usual |
+| `very quiet` | very quiet |
+
++59% going in always returns `peak`, and -57% always returns `very quiet`. The same number always gets the same tier.
+
+Second, the model only does the wording. It receives the tier, for example `peak`, and its job is just to write it naturally in the target language, say "旺季" in Chinese or "ピーク" in Japanese. Code makes the judgement, the model does the expression. (That wording was later taken away from the model too, see 1.4: the five phrases for each language are supplied by code and the model copies them verbatim.)
+
+Third, the prompt and the ingest check change together. The check went from "must be a signed percentage" to "must correspond to one of the five tiers", in step with the new prompt.
+
+Takeaway. A judgement that a rule can compute, such as which range a number falls in, belongs to code. The model should do the part it is good at, saying the result in natural language. And when you change an output format, change the downstream check with the prompt.
+
+| What went wrong | Effect after the fix | The fix |
+|---|---|---|
+| The demand column printed "+59%" and "-57%" when the product wanted word tiers; changing only the prompt made every row fail the ingest check, which still required a signed percentage; letting the model pick the tier put the same number in different tiers on different pages and languages | The demand column is one of peak, busier, average, quieter or very quiet in the target language, and the same number always maps to the same tier | `demandLevel(delta_pct)` returns the tier from fixed thresholds in code and the model only does the wording; the ingest check changed from "signed percentage" to "one of the five tiers", in step with the prompt |
 
 ### 1.4 Translated tables that kept their English headers
 
-This one took four prompt versions to give up on.
+This one took four versions. The first three changed the prompt and did not work; the fourth switched to code.
 
-| Version | Change | Result in the next batch |
+Symptom. Pages have tables such as a price table, and the header should follow the page's language. In Korean, Japanese, `zh_HK` and `zh_TW` pages the header was English throughout:
+
+```
+Category    Typical Price    Usual Range
+...         ...              ...
+```
+
+Besides the header, some cells of the demand column from the previous section (peak, busier than usual and so on) were also in English.
+
+| Version | Change | Result on the next batch |
 |---|---|---|
-| v23 | Non-English headers and demand cells must be written in the target language | Not followed in `ja_JP`, `zh_HK`, `zh_TW`, `ko_KR` |
-| v24 | Make English example headers Title Case | Fixed English; non-English headers still English |
-| v25 | Example headers described as meanings, not fixed text; hard check added | 6 demand cells and 1 header still English |
-| v26 | Code supplies the exact header cells and demand phrases per locale; the checker compares verbatim | Zero header or demand errors across all 11 locales |
+| v23 | Non-English headers and demand cells must be written in the target language | `ja_JP`, `zh_HK`, `zh_TW`, `ko_KR` did not comply |
+| v24 | English example header changed to Title Case | English fixed, non-English headers still English |
+| v25 | Example header changed to describe the meaning rather than fixed wording, plus a hard check | 6 demand cells and 1 header still English |
+| v26 | Code supplies the exact header and demand phrases per locale, and the check compares them verbatim | Zero header and demand-column errors across 11 locales |
 
-The v24 step is the instructive one. I had put the English example header in the template (`Category | Typical Price | Usual Range`), and the model, working in Korean, copied it. The example was the strongest signal in the prompt, and it was in the wrong language.
+The cause showed itself at v24. I had put an English example header (`Category | Typical Price | Usual Range`) into the template, and when writing a Korean page the model copied that line as it was. In a prompt an example weighs more than a rule, and "write it in the target language" cannot outweigh an English line sitting right there. v25 removed the concrete example and things improved a lot, but as long as the model translates it itself, a small share will always come out wrong.
 
-The v26 mechanism reuses something the project already had, a per-locale vocabulary block appended at the end of the prompt (`{{locale_vocab}}`, previously used for month names and hotel classes). The header cells and the five demand phrases for each of the 11 locales went into that table, and the prompt says "copied exactly". The model's task changed from translate to copy, which is a task it does reliably.
+Fix (v26). Stop asking the model to translate and give it the standard wording for each language.
 
-Scope was a deliberate choice: only the 11 production locales, with the previous rule as a fallback for the rest. Covering all 46 would have been 4 times the review burden for languages that were not shipping.
+The project already had a mechanism for this: a per-locale vocabulary block (`{{locale_vocab}}`) appended at the end of the prompt, previously used for month names and hotel classes. v26 added each locale's header cells and the five demand phrases to it. Roughly like this (the translations are illustrative):
+
+```
+ko_KR  header: 카테고리 / 일반 가격 / 보통 범위    demand: 성수기 / …
+ja_JP  header: カテゴリー / 一般的な価格 / …        demand: ピーク / …
+zh_HK  header: 類別 / 一般價格 / …                  demand: 旺季 / …
+```
+
+The prompt says "copy verbatim". The model's job went from translating to copying, which it does reliably. The ingest check became a verbatim comparison too: the header and demand column must match the vocabulary exactly, otherwise the row is rejected.
+
+The scope was a deliberate choice: only the 11 live locales, with the rest still on the earlier rules as a fallback. Covering all 46 locales would have meant four times the translations to review, and those locales are not live.
+
+The result was zero errors in the header and demand column across 11 locales.
+
+Takeaway. Fixed wording such as headers and tier names should not be translated by the model. Code gives the standard form per language, the model copies it, and the check compares it verbatim. Also remember that examples in a prompt beat rules: if an example is in the wrong language, the model follows it into the error.
+
+| What went wrong | Effect after the fix | The fix |
+|---|---|---|
+| Korean, Japanese, Cantonese and Traditional Chinese pages kept the header `Category / Typical Price / Usual Range` (the model copied the English example header in the prompt); after v25, 6 demand cells and 1 header were still English | Zero header and demand-column errors across 11 locales | v26: code supplies the exact header and five demand phrases per locale in the per-locale vocabulary block `{{locale_vocab}}`, the prompt says "copy verbatim", and the check compares verbatim; only the 11 live locales are covered |
 
 ### 1.5 The section the model forgot to write
 
-Symptom. Every batch had one or two city pages with only the first of three sections. Across four consecutive batches it was a different page each time (`en_MY`, then `en_SG`, then `en_BS`, then `en_HK`).
+Symptom. Every city page should have three sections. But every batch had one or two pages with only the first section, and the other two simply missing.
 
-I checked whether it was truncation. It was not. `finish_reason` was `stop`, the cap was 2,500 tokens, and the broken answers were about 140 tokens long against 625 for a healthy one. The prompt listed all three sections and the data for all three was present. The prompt even said "Stopping after the first section while the others have data is a defect", and the model ignored it. The first section happened to end like a conclusion, and the model stopped there. It is a random behaviour of a small model, so adding rules cannot drive it to zero.
+It was hard to catch. Four batches in a row, the failing page was a different one each time: first `en_MY`, then `en_SG`, then `en_BS`, then `en_HK`. There was no fixed pattern, and when I fixed one, another page showed it.
 
-Fix (v27). Change the output contract. The answer used to be one markdown string; now it is an object with one required field per section, each `{heading, body}`, with strict mode forcing every field to be present. Fields are named after the section icons. Code assembles the final markdown, including the `## :icon-x:` heading markers, which means the model also cannot get a marker wrong. Sections without data have no field at all.
+I suspected truncation first, the model hitting the length cap before it finished. Checking ruled it out:
 
-The decision that pushed me here was my own: when the assistant suggested accepting the behaviour and relying on retries, my answer was that I wanted guaranteed output, not a probability. The alternative the assistant raised, one call per section, would have doubled the call count and changed the cost structure for the sake of a sporadic defect.
+- `finish_reason` was `stop`, so the model ended on its own. A truncation would show `length`.
+- The cap was 2,500 tokens, the broken answers were about 140 tokens and the healthy ones about 625, nowhere near the cap.
 
-Unmeasured: I did not measure the missing-section rate on a batch generated after v27, so the guarantee is by design, not by observation.
+The prompt was fine too. All three sections were listed, the data for all three was supplied, and the prompt even said "complete data but only the first section is a defect". The model still dropped them.
+
+My judgement is that the end of the first section reads like a summary, the model feels the piece is over at that point and stops. That is random behaviour of a small model. However strictly the rule is written, it only lowers the frequency, it cannot reach zero.
+
+Fix (v27). Change the output format.
+
+Before, the model returned one markdown string and how many sections it wrote was up to it. Now it returns an object with one required field per section, whose value is `{heading, body}`, and the field names are the sections' icon names. Roughly like this (the field names are illustrative):
+
+```json
+{
+  "<icon name 1>": { "heading": "...", "body": "..." },
+  "<icon name 2>": { "heading": "...", "body": "..." },
+  "<icon name 3>": { "heading": "...", "body": "..." }
+}
+```
+
+With strict schema mode on top, every field must appear, and an output missing a field is invalid in format. "Writing only one section" can no longer happen structurally.
+
+The final markdown is assembled by code. After receiving the object, code builds the page from the sections, including heading markers such as `## :icon-x:`. The model no longer touches those markers, so it cannot get them wrong.
+
+If a city has no data for a section, code leaves that field out when it builds the schema, so the model is not forced to make something up.
+
+What pushed me to this was a decision. The assistant had suggested accepting the behaviour and covering it with retries. My answer was that I wanted guaranteed output, not a probability. The other option it offered was one call per section, which would never drop a section but would double the number of calls, and changing the whole cost structure for a rare defect was not worth it.
+
+Not measured: I have not measured the missing-section rate on batches generated after v27, so "no missing sections" is a guarantee by design, not a conclusion from observation.
+
+Takeaway. Random problems like the model occasionally forgetting to write something cannot be pushed to zero by adding rules. The more reliable way is to change the output format: make each part a required field so that leaving it out is structurally impossible, and leave the formatting to code.
+
+| What went wrong | Effect after the fix | The fix |
+|---|---|---|
+| Every batch had one or two city pages with only the first of three sections (broken answers about 140 tokens, healthy ones about 625), `finish_reason` was `stop` and not truncation; writing "complete data but only the first section is a defect" into the prompt did not help | By design every section is a required field, so a missing section is structurally impossible; not measured on batches after v27 | v27 changed the output from one markdown string to an object with one required `{heading, body}` field per section, enforced by a strict schema; markdown and heading markers are assembled by code; a section with no data has no field |
 
 ### 1.6 A word the prompt itself introduced: "Global"
 
-Symptom. Section headings such as "When travellers book (Global)", on pages with no particular origin market.
+Some pages are written for a specific origin market, such as "for travellers setting out from Singapore", and then putting the origin market in a section title makes sense. Other pages have no specific origin market, and the title still read:
 
-The first fix added "never write from Global" to the heading rule. It did not work. The second analysis found the cause was two instructions colliding: the run block rendered to "Address travellers setting out from Global", while the heading rule asked the model to name the origin market in the heading. The model combined them.
+```
+When travellers book (Global)
+```
 
-Even after removing that sentence, `origin_market: Global` still sat in the input block, and the model copied the value. The final fix has three parts: render the value as `none`, make the clause a placeholder that is filled with "address travellers in general" for those markets, and re-state the exception in terms of `none`. After that, the word no longer appears anywhere in the data the model reads.
+"Global" only means "no specific origin market" inside the system. It was never meant to appear on the page a reader sees.
 
-The pattern repeated for other leaked strings. Footnotes said "prices are shown in the card's currency code", and the word "card" leaked 48 times in one batch. The fix was to reword the instruction, and "card" dropped to zero in the next batch. A label like "Bold decision:" appeared in the output because the instruction used it as a heading. Both are the same bug: anything you write into a prompt is a candidate for the output.
+Two similar problems showed up as well. In one batch the word "card" appeared 48 times on pages. And a label-like string, "Bold decision:", showed up in the output.
+
+Cause. The first time I got it wrong: I added "do not write from Global" to the title rule, and it did nothing.
+
+Digging further, two instructions were colliding. The prompt had a run block that rendered as "Address travellers setting out from Global". The system simply filled in the origin-market value, without considering that with the value Global the sentence makes no sense on its own. And the title rule asked the model to put the origin market in the title. The model combined the two and wrote "(Global)".
+
+Deleting that sentence was not enough either. The input data still had a line `origin_market: Global`, and the model would still copy that value into the title. As long as the word appears anywhere the model can see, it can be written out.
+
+The other two problems are the same thing. The footer instruction said "prices are shown in the card's currency code". "Card" is the system's internal name for a data card, and the model took it as a word for the body text. "Bold decision:" was a heading the instruction used to mark a formatting requirement, and the model printed it as content.
+
+Fix. For "Global" I changed three things so that the word disappears from the model's view entirely:
+
+- The data no longer says Global. When there is no origin market, `origin_market` is rendered as `none`.
+- The sentence in the run block that describes the target reader no longer hard-codes "from xx". It is a placeholder: the specific market if there is one, otherwise "for general travellers".
+- The exception rule that used to test "is it Global" now tests "is it `none`".
+
+After that, the model reads no data containing the word "Global". I did not recheck on a new batch afterwards, so the effect is inferred from the design, not measured.
+
+For "card" I rewrote the footer instruction so the word no longer appears, and on the next batch its count dropped to zero.
+
+Takeaway. Anything you write into a prompt can end up in the output. Internal terms, placeholder values and format labels can all be written into the body text as long as the model can see them. Adding "do not write X" often does nothing; the reliable way is to make sure X is not in what the model reads at all.
+
+| What went wrong | Effect after the fix | The fix |
+|---|---|---|
+| A page with no specific origin market had the section title "When travellers book (Global)"; the word "card" from the footer instruction leaked 48 times in one batch | "Global" no longer appears in any data the model reads (not rechecked on a new batch); "card" dropped to zero on the next batch | The origin market renders as `none`, the related clause became a placeholder that reads "for general travellers" when there is no origin, and the exception rule tests for `none`; the footer instruction was rewritten and no longer mentions "card" |
 
 ### 1.7 Contradictions between rules I wrote myself
 
-Three real ones:
+The problem in this section is in rules I wrote: several rules fought each other, the model did not know which to obey, and mistakes followed. Here are three real examples. First a term: the shared prefix is the opening part of the prompt that all languages and all templates share, so whichever language a page is generated in, the model reads it.
 
-- The shared prefix said "never write the market name in English", which is an instruction that contradicts itself on an English locale. English pages came back with Chinese month names. v13 reworded it to "in the language of target_language", and removed every CJK character from the shared prefix, because the English pages had been picking up the Chinese examples sitting in it.
-- The hotel template told the model to call a district "best value", while a global rule forbade "best value" as a bare claim. Both are in the prompt, so the model obeyed one at random. Replaced with "most affordable".
-- The month rule said "convert months to names", but never mentioned the `YYYY-MM` strings that the data actually contains, so raw `2026-06` leaked into prose.
+Example 1: Chinese month names on an English page.
 
-A cheap habit that would have caught all three: for each global rule, search every template for the phrase it forbids.
+Symptom. On an English page the months were written in Chinese, for instance "7月".
+
+Cause. The shared prefix had a rule: "never write market names in English". It was meant to stop non-English pages from mixing in English, but on an English page it contradicts itself: the page asks for English and the rule says English is not allowed. Worse, the shared prefix also had Chinese examples, which English pages read as well, and the model picked up the Chinese form from them.
+
+Fix (v13). The rule became "write it in the language of target_language", which makes sense on a page in any language. I also deleted every CJK character from the shared prefix so that English pages stop learning from Chinese examples.
+
+Example 2: a hotel area called "best value".
+
+Symptom. The page described an area as "best value".
+
+Cause. Two rules conflicted. The hotel template asked the model to call one area "best value", while a global rule forbade stating "best value" as an unsupported fact, since "best value" needs data behind it. With both rules in the prompt, the model could not satisfy both and followed one at random, so it wrote it sometimes and sometimes not.
+
+Fix. I replaced "best value" in the template with "most affordable". "Most affordable" can be read straight off the price data and no longer conflicts with the global ban.
+
+Example 3: a raw `2026-06` in the body text.
+
+Symptom. The body text contained `2026-06`, a data format, instead of "June 2026".
+
+Cause. The month rule said "turn months into names" but did not say what the months in the data look like. The data actually stores `YYYY-MM` strings, the rule never mentioned that form, so the model did not realise it was also a month to convert and wrote it into the body as it was.
+
+Fix. I added the `YYYY-MM` form to the month rule and said explicitly that it must be converted to a month name.
+
+A cheap habit that would have caught all three: for every global rule, search all templates for the word it forbids. If a global rule bans "best value", one search shows that the hotel template asks for exactly that, and the conflict is exposed at once. The check costs almost nothing.
+
+After these fixes I did not count whether the three problems recur, so "no longer in conflict" is a statement about the rules, not measured data.
+
+Takeaway. The more rules there are, the more likely they contradict each other, and faced with conflicting rules the model just picks one at random. When writing a rule, think about whether it holds in every language and every template, and make a habit of searching globally each time you add one.
+
+| What went wrong | Effect after the fix | The fix |
+|---|---|---|
+| English pages showed Chinese month names ("never write market names in English" contradicts itself on English pages); a hotel area was called "best value" (conflict with a global ban); a raw `2026-06` leaked into the body (the month rule never mentioned `YYYY-MM`) | The rules no longer conflict; I have not measured how often the three problems recur | The prefix now says "write it in the language of target_language" and every CJK character was removed from the shared prefix; "best value" became "most affordable"; the month rule gained the `YYYY-MM` conversion; habit: search every template for the word a global rule forbids |
 
 ## Part 2: What the prompt did fix
 
