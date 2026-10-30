@@ -654,6 +654,72 @@ On cost and speed:
 | Origin market rendered as `none` | I did not re-check headings for "Global" on a batch generated after the change |
 | Effect of tiering page types onto cheaper models | Proposed in the cost doc, not run |
 
+## Side note: zombie processes left by browser recycling, amplified by xtransit into memory growth
+
+This section has nothing to do with prompts. It covers another investigation on the same kind of service that is worth writing down: why the memory of the PDF rendering services (nodepdfrenderer and commonpdfrenderer) kept growing, and why it grew in an unexpected place.
+
+### Symptom
+
+Pod memory only went up and never came back down: over a week it climbed from about 120 MB to more than 600 MB, with no sawtooth in the curve. A periodic browser recycle had already been shipped. It did bring the growth of kernel memory down (from 1.5 to 3 GB per day to about 0.1 GB), but anonymous memory still rose at about 3.5 MB per hour. The recycle had not stopped it.
+
+Split by process, the one growing was the egg agent process, not the workers that handle requests and not Chrome. Two features of the chart stood out: RSS climbed steadily while the JS `heap_used` was almost flat, and the agent's CPU kept rising with uptime, with spikes getting denser and taller, even though the agent handles no requests.
+
+Together these say that the growth is outside the JS heap, in native memory, and that the agent is doing a periodic job that gets more expensive over time.
+
+### Cause: two harmless things stacked together
+
+First, what a zombie process is. After a process exits, its parent has to call `wait()` to reap it before the system removes it from the process table. If nobody does, it stays in `ps` with state `Z`. It uses no CPU and almost no memory, but it still has a directory under `/proc`.
+
+Condition one: recycling the browser leaves zombies behind. Every Chrome recycle leaves 4 exited descendants that nobody reaps: 2 `chrome_crashpad_handler` processes (Chrome's crash reporter) and 2 `cat` processes (started by the `google-chrome` wrapper script). Their parent is already gone, so the system re-parents them to PID 1. The container's PID 1 is `yarn`, which only reaps the children it started itself and ignores orphans, so the zombies pile up.
+
+Condition two: xtransit runs with `docker: true`. xtransit is the monitoring component inside the agent. In this mode, every 60 seconds it walks `/proc` and reads `/proc/<pid>/stat` for every PID. The trouble is in how the files are read: files under `/proc` report a size of 0, and when Node's `fs.readFile` meets such a file it first allocates a 64 KiB buffer for it. Zombies have a directory under `/proc` too, so they get read as well.
+
+Together they form an amplifier:
+
+- More zombies means more PIDs in `/proc`, so each scan allocates more buffers.
+- Those buffers are native memory outside the JS heap, and the glibc allocator does not hand it back to the operating system quickly, so the agent's RSS grows linearly with the zombie count.
+- The scan itself also gets slower, so the agent's CPU grows linearly as well.
+
+Neither condition causes trouble on its own. With xtransit but no zombies, each scan covers a few dozen PIDs and the cost is constant; other services run the same egg plus xtransit and their agents did not grow. With zombies but no xtransit, each zombie costs a small kernel structure of roughly 8 to 12 KB, which is negligible.
+
+This also explains why the problem did not exist before the recycle shipped: Chrome used to stay up and never restart, so it never produced zombies. The recycle itself is correct. It fixed the kernel-memory half and, as a side effect, exposed this half.
+
+### How it was confirmed
+
+The conclusion was not a guess from experience. It was verified layer by layer.
+
+First, reading the code. xtransit's `getAllUsedCpuFromProc()` reads `/proc` in a way that directly explains why the cost is proportional to the PID count.
+
+Second, a local reproduction. With the real xtransit code, raising the PID count from 3 to 6003 grew the process RSS from 47 MB to 445 MB while the JS heap grew by only a dozen MB, and `arrayBuffers` came out at exactly 128 KiB times the PID count.
+
+Third, a reproduction in the test environment. Using the same image as production, with the recycle frequency raised to accumulate zombies quickly, I counted 2876 zombies inside the Pod, half of them `cat` and half `chrome_crashpad_handler`, and PID 1 was indeed yarn. Sampling the processes' anonymous memory once a minute, 516 more zombies appeared in 30 minutes and the agent's anonymous memory grew by about 74 MB, which works out to about 143 KB per zombie. Over the same period the app worker and the master did not move.
+
+Scaling that back to production: 143 KB times about 3000 zombies is roughly 430 MB, and the production agent had actually grown by 428 MB since startup. The orders of magnitude match.
+
+The decisive step was a controlled experiment: remove one condition and the problem disappears. With `tini` as PID 1 reaping zombies, the same load test produced 0 zombies, and the thread count and container RSS stopped growing over two hours. I also checked that repeatedly starting Chrome does not leak by itself: with zombies being reaped, 200 consecutive Chrome launches left the render process RSS steady at about 51 MB. So the growth comes from the zombies, not from Chrome.
+
+### Fix
+
+Add `tini` as PID 1 in the Dockerfile:
+
+```dockerfile
+RUN apt-get install -y ... tini
+ENTRYPOINT ["/usr/bin/tini", "-g", "--"]
+CMD ["yarn", "start"]
+```
+
+`tini` has a single job, reaping. Orphans re-parented to PID 1 are reaped as soon as they exit, so zombies no longer accumulate. `-g` makes it forward SIGTERM to the whole process group, so `yarn`, the egg master and the workers all receive the exit signal. A side benefit: previously the app was killed outright when the Pod stopped, and now it can exit gracefully.
+
+Both Dockerfiles (voucher and non-voucher) must change together. If either is missed, the other service keeps the problem.
+
+### What is worth remembering from this investigation
+
+- A chart can narrow the search but cannot establish the cause. RSS rising while the heap stays flat only says the growth is in native memory. Pinning it on zombies came from splitting by process, comparing with other services, and finally an experiment that could be reproduced and controlled.
+- "The recycle works" and "the problem is solved" are different statements. The recycle made the kernel-memory curve look good but never touched the anonymous half. Memory has to be looked at by type (anonymous, kernel, cache) rather than as a single total.
+- An unremarkable default (`/proc` files get a 64 KiB buffer) and an unremarkable leftover (a few unreaped zombies) were each harmless. The problem only appeared where they met, and no single component looks faulty on its own. Look at the combination.
+
+What has not been verified directly: the number of zombies in production was never counted. The roughly 3000 above is estimated from the recycle frequency, and only the order of magnitude matches the observed memory growth. Also, before the recycle shipped, the growth of about 3.7 MB per hour cannot have come from this mechanism (there were no zombies then). It is presumed to be growth of the long-running Chrome itself, but the per-process data from that period has expired and cannot be looked up.
+
 ## Appendix: prompt revision timeline
 
 | Date | Revision | Change |
